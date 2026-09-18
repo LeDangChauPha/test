@@ -11,10 +11,11 @@ import re
 import sqlite3
 from collections import Counter
 from datetime import datetime
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 
 REQUIRED = ("Model", "Prompt", "Credit", "Date")
-OUTPUT_FIELDS = (*REQUIRED, "WorkspacePath")
+OUTPUT_FIELDS = (*REQUIRED, "WorkspacePath", "SessionId")
 PROMPT_LIMIT = 500
 
 
@@ -97,7 +98,7 @@ def session_records(path: Path) -> list[dict[str, str | None]]:
                 apply_session_update(requests, event)
 
     records = []
-    for request in requests:
+    for source_record, request in enumerate(requests):
         if not isinstance(request, dict):
             continue
         message = request.get("message", {})
@@ -117,6 +118,20 @@ def session_records(path: Path) -> list[dict[str, str | None]]:
                 "prompt": normalize_prompt(message.get("text")),
                 "credit": str(credit) if credit is not None else None,
                 "date": date,
+                "session_id": path.stem,
+                "source_file": str(path),
+                "source_record": source_record,
+                "source_keys": sorted(request.keys()),
+                "credit_key": (
+                    "copilotCredits"
+                    if "copilotCredits" in request
+                    else "credit" if "credit" in request else None
+                ),
+                "timestamp_key": (
+                    "timestamp"
+                    if "timestamp" in request
+                    else "responseTimestamp" if "responseTimestamp" in request else None
+                ),
             }
         )
     return records
@@ -220,6 +235,304 @@ def is_current_month(record: dict[str, str | None]) -> bool:
     return date.year == now.year and date.month == now.month
 
 
+def parse_credit_value(value: object) -> Decimal | None:
+    if value is None or value == "":
+        return None
+    try:
+        return Decimal(str(value).replace(",", "").strip())
+    except (InvalidOperation, AttributeError):
+        return None
+
+
+def credit_text(value: object) -> str:
+    parsed = parse_credit_value(value)
+    if parsed is None:
+        return ""
+    rounded = parsed.quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
+    return format(rounded, "f")
+
+
+def write_excel_summary(
+    records: list[dict[str, str | None]], output_path: Path, sort_by_date: bool = False
+) -> None:
+    from openpyxl import Workbook
+
+    if sort_by_date:
+        records = sorted(records, key=chronological_key)
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Chat Summary"
+    worksheet.append(OUTPUT_FIELDS)
+    for record in records:
+        row = [
+            record.get("model") or "",
+            record.get("prompt") or "",
+            parse_credit_value(record.get("credit")),
+            record.get("date") or "",
+            record.get("workspace_path") or "",
+            record.get("session_id") or "",
+        ]
+        worksheet.append(row)
+    for cell in worksheet[1]:
+        cell.font = cell.font.copy(bold=True)
+    for cell in worksheet["C"][1:]:
+        if cell.value is not None:
+            cell.number_format = "0.00000000000000000"
+    worksheet.freeze_panes = "A2"
+    workbook.save(output_path)
+
+
+def session_summary_records(
+    records: list[dict[str, str | None]],
+) -> list[dict[str, str | None]]:
+    summaries: dict[str, dict[str, str | None]] = {}
+    for index, record in enumerate(records):
+        session_id = record.get("session_id") or f"<record-{index}>"
+        summary = summaries.get(session_id)
+        if summary is None:
+            summary = {
+                "model": record.get("model"),
+                "prompt": record.get("prompt"),
+                "credit": "0",
+                "date": record.get("date"),
+                "workspace_path": record.get("workspace_path"),
+                "session_id": record.get("session_id"),
+            }
+            summaries[session_id] = summary
+        elif not summary.get("prompt") and record.get("prompt"):
+            summary["prompt"] = record["prompt"]
+
+        credit = parse_credit_value(record.get("credit"))
+        if credit is not None:
+            total = parse_credit_value(summary.get("credit")) or Decimal("0")
+            summary["credit"] = str(total + credit)
+
+    return list(summaries.values())
+
+
+def write_csv_summary(records: list[dict[str, str | None]], output_path: Path) -> None:
+    with output_path.open("w", encoding="utf-8", newline="") as target:
+        writer = csv.DictWriter(target, fieldnames=OUTPUT_FIELDS)
+        writer.writeheader()
+        for record in records:
+            writer.writerow(
+                {
+                    "Model": record.get("model") or "",
+                    "Prompt": record.get("prompt") or "",
+                    "Credit": credit_text(record.get("credit")),
+                    "Date": record.get("date") or "",
+                    "WorkspacePath": record.get("workspace_path") or "",
+                    "SessionId": record.get("session_id") or "",
+                }
+            )
+
+
+def reconciliation_outputs(
+    raw_records: list[dict[str, str | None]], output_directory: Path
+) -> None:
+    duplicate_keys = Counter(
+        (
+            record.get("model"),
+            record.get("prompt"),
+            record.get("credit"),
+            record.get("date"),
+            record.get("workspace_path"),
+            record.get("session_id"),
+        )
+        for record in raw_records
+    )
+    duplicate_seen: Counter[tuple] = Counter()
+    category_counts: Counter[str] = Counter()
+    category_totals: Counter[str] = Counter()
+    model_counts: Counter[str] = Counter()
+    model_totals: Counter[str] = Counter()
+    date_counts: Counter[str] = Counter()
+    date_totals: Counter[str] = Counter()
+    model_date_counts: Counter[tuple[str, str]] = Counter()
+    model_date_totals: Counter[tuple[str, str]] = Counter()
+    raw_total = Decimal("0")
+    current_month_total = Decimal("0")
+    detail_records: list[dict[str, object]] = []
+
+    for source_row, record in enumerate(raw_records, start=2):
+        credit = parse_credit_value(record.get("credit"))
+        if credit is not None:
+            raw_total += credit
+            if is_current_month(record):
+                current_month_total += credit
+
+        duplicate_key = (
+            record.get("model"),
+            record.get("prompt"),
+            record.get("credit"),
+            record.get("date"),
+            record.get("workspace_path"),
+            record.get("session_id"),
+        )
+        duplicate_seen[duplicate_key] += 1
+        duplicate_candidate = duplicate_keys[duplicate_key] > 1
+
+        if not record.get("prompt"):
+            category = "skipped_missing_prompt"
+        elif not record.get("date") or not record.get("model"):
+            category = "skipped_missing_date_or_model"
+        elif credit is None and is_current_month(record):
+            category = "skipped_missing_credit"
+        elif is_current_month(record):
+            category = "included_chat_record"
+        else:
+            category = "other_copilot_usage_record"
+
+        category_counts[category] += 1
+        if credit is not None:
+            category_totals[category] += credit
+            if category == "included_chat_record":
+                model = record.get("model") or "<blank>"
+                date = (record.get("date") or "<blank>")[:10]
+                model_counts[model] += 1
+                model_totals[model] += credit
+                date_counts[date] += 1
+                date_totals[date] += credit
+                model_date_key = (model, date)
+                model_date_counts[model_date_key] += 1
+                model_date_totals[model_date_key] += credit
+        detail_records.append(
+            {
+                "source_row": source_row,
+                "category": category,
+                "duplicate_candidate": duplicate_candidate,
+                "model": record.get("model"),
+                "prompt": record.get("prompt"),
+                "credit": record.get("credit"),
+                "date": record.get("date"),
+                "workspace_path": record.get("workspace_path"),
+                "session_id": record.get("session_id"),
+                "source_file": record.get("source_file"),
+                "source_record": record.get("source_record"),
+                "source_keys": record.get("source_keys"),
+                "credit_key": record.get("credit_key"),
+                "timestamp_key": record.get("timestamp_key"),
+            }
+        )
+
+    duplicate_rows = [item for item in detail_records if item["duplicate_candidate"]]
+    report = {
+        "raw_record_count": len(raw_records),
+        "raw_database_total": str(raw_total),
+        "raw_database_total_current_month": str(current_month_total),
+        "current_month": datetime.now().strftime("%Y-%m"),
+        "categories": {
+            category: {
+                "record_count": category_counts[category],
+                "credit_total": str(category_totals[category]),
+            }
+            for category in sorted(category_counts)
+        },
+        "by_model": {key: str(model_totals[key]) for key in sorted(model_totals)},
+        "by_date": {key: str(date_totals[key]) for key in sorted(date_totals)},
+        "duplicate_candidates": {
+            "record_count": len(duplicate_rows),
+            "credit_total": str(
+                sum(
+                    (
+                        parse_credit_value(item["credit"]) or Decimal("0")
+                        for item in duplicate_rows
+                    ),
+                    Decimal("0"),
+                )
+            ),
+            "excess_record_count": sum(
+                count - 1 for count in duplicate_keys.values() if count > 1
+            ),
+        },
+        "detail_file": "reconciliation_records.jsonl",
+    }
+
+    with (output_directory / "reconciliation_report.json").open(
+        "w", encoding="utf-8"
+    ) as target:
+        json.dump(report, target, indent=2)
+    with (output_directory / "reconciliation_records.jsonl").open(
+        "w", encoding="utf-8"
+    ) as target:
+        for detail in detail_records:
+            target.write(json.dumps(detail, ensure_ascii=True) + "\n")
+    with (output_directory / "reconciliation_records.csv").open(
+        "w", encoding="utf-8", newline=""
+    ) as target:
+        fields = (
+            "source_row",
+            "category",
+            "duplicate_candidate",
+            "model",
+            "prompt",
+            "credit",
+            "date",
+            "workspace_path",
+            "source_file",
+            "source_record",
+            "source_keys",
+            "credit_key",
+            "timestamp_key",
+            "session_id",
+        )
+        writer = csv.DictWriter(target, fieldnames=fields)
+        writer.writeheader()
+        for detail in detail_records:
+            writer.writerow(
+                {
+                    **detail,
+                    "source_keys": json.dumps(detail["source_keys"] or []),
+                    "credit": credit_text(detail["credit"]),
+                }
+            )
+    with (output_directory / "credit_totals_by_model.csv").open(
+        "w", encoding="utf-8", newline=""
+    ) as target:
+        writer = csv.DictWriter(target, fieldnames=("Model", "RecordCount", "CreditTotal"))
+        writer.writeheader()
+        for model in sorted(model_totals):
+            writer.writerow(
+                {
+                    "Model": model,
+                    "RecordCount": model_counts[model],
+                    "CreditTotal": credit_text(model_totals[model]),
+                }
+            )
+    with (output_directory / "credit_totals_by_date.csv").open(
+        "w", encoding="utf-8", newline=""
+    ) as target:
+        writer = csv.DictWriter(target, fieldnames=("Date", "RecordCount", "CreditTotal"))
+        writer.writeheader()
+        for date in sorted(date_totals, key=lambda value: chronological_key({"date": value})):
+            writer.writerow(
+                {
+                    "Date": date,
+                    "RecordCount": date_counts[date],
+                    "CreditTotal": credit_text(date_totals[date]),
+                }
+            )
+    with (output_directory / "credit_totals_by_model_date.csv").open(
+        "w", encoding="utf-8", newline=""
+    ) as target:
+        writer = csv.DictWriter(
+            target, fieldnames=("Model", "Date", "RecordCount", "CreditTotal")
+        )
+        writer.writeheader()
+        for model, date in sorted(
+            model_date_totals,
+            key=lambda item: (item[0], chronological_key({"date": item[1]})),
+        ):
+            writer.writerow(
+                {
+                    "Model": model,
+                    "Date": date,
+                    "RecordCount": model_date_counts[(model, date)],
+                    "CreditTotal": credit_text(model_date_totals[(model, date)]),
+                }
+            )
+
+
 def timestamped_summary_path(output_directory: Path) -> Path:
     timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     return output_directory / timestamp / "chat_summary.csv"
@@ -243,6 +556,8 @@ def main() -> None:
     output_path = timestamped_summary_path(args.output_directory or Path("chatlog") / "csv")
 
     raw_records, raw_headers = read_source(args.input)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    reconciliation_outputs(raw_records, output_path.parent)
     raw_records = [record for record in raw_records if is_current_month(record)]
     raw_records.sort(key=chronological_key)
     header_map = {normalized_header(name): name for name in raw_headers}
@@ -256,24 +571,23 @@ def main() -> None:
             "credit": row.get("credit"),
             "date": row.get("date"),
             "workspace_path": row.get("workspace_path"),
+            "session_id": row.get("session_id"),
         }
         record["parsed_date"] = parse_date(record["date"])
         records.append(record)
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", encoding="utf-8", newline="") as target:
-        writer = csv.DictWriter(target, fieldnames=OUTPUT_FIELDS)
-        writer.writeheader()
-        for record in records:
-            writer.writerow(
-                {
-                    "Model": record["model"] or "",
-                    "Prompt": record["prompt"] or "",
-                    "Credit": record["credit"] or "",
-                    "Date": record["date"] or "",
-                        "WorkspacePath": record["workspace_path"] or "",
-                }
-            )
+    write_csv_summary(records, output_path)
+    write_excel_summary(records, output_path.with_name("chat_summary.xlsx"))
+    write_excel_summary(
+        records, output_path.with_name("chat_summary_sort.xlsx"), sort_by_date=True
+    )
+    session_records = session_summary_records(records)
+    write_csv_summary(
+        session_records, output_path.with_name("summary_by_session.csv")
+    )
+    write_excel_summary(
+        session_records, output_path.with_name("summary_by_session.xlsx")
+    )
     print(f"Wrote {len(records)} record(s) to {output_path}")
 
 

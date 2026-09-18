@@ -29,11 +29,13 @@ python scripts/extract_copilot_chat_csv.py "C:\Users\<user>\AppData\Roaming\Code
 
 Prompt text is normalized for CSV readability: non-ASCII and control characters are removed, whitespace is collapsed, and the result is limited to 500 characters.
 
-Summary CSV output also includes `WorkspacePath`, identifying the source VS Code workspace for each row.
+Summary CSV output also includes `WorkspacePath` and `SessionId`. For VS Code `chatSessions/*.jsonl` input, `SessionId` is the unique JSONL filename stem for the chat session; non-session inputs leave it blank rather than inventing an identifier.
 
 This CSV is a local workspace-session extract, not an account billing report. Its numeric credits cannot be compared directly with the monthly usage meter shown in GitHub Copilot. The monthly meter may include other devices, web or CLI usage, inline completions, and server-side usage that is absent from local workspace storage.
 
 Each run creates `chatlog/csv/<yyyy-MM-dd-HH-mm-ss>/chat_summary.csv`. A workspace folder with no `chatSessions/*.jsonl` snapshots cannot produce a summary.
+
+Each run also creates `chat_summary.xlsx`, `chat_summary_sort.xlsx`, `summary_by_session.csv`, and `summary_by_session.xlsx`, plus `credit_totals_by_model.csv`, `credit_totals_by_date.csv`, `credit_totals_by_model_date.csv`, `reconciliation_report.json`, `reconciliation_records.jsonl`, and `reconciliation_records.csv` beside `chat_summary.csv`. Both Excel files write `Credit` as numeric cells for reliable spreadsheet totals; `chat_summary_sort.xlsx` is explicitly sorted by date ascending. The session summaries keep the first prompt for each `SessionId` and sum all credits from that session into one row, using the six columns `Model,Prompt,Credit,Date,WorkspacePath,SessionId`. The model/date CSVs contain record counts and six-decimal credit totals for included current-month records; `credit_totals_by_model_date.csv` contains one row per model per calendar day. The report classifies raw records as included current-month chat, missing prompt, missing date/model, missing credit, or other-date Copilot usage. It includes all-record and current-month raw credit totals, duplicate candidates, SessionId, and source JSON keys/record indexes for tracing individual records.
 
 To extract the current calendar month from every workspace, pass the parent `workspaceStorage` folder instead. The script selects workspace IDs containing `state.vscdb` and either `GitHub.copilot-chat` or `chatSessions`, reads their `chatSessions/*.jsonl` files, filters requests by their stored request date, and combines the results into one timestamped project output. Workspace folder creation dates are not used as the activity filter because older workspaces can contain current-month prompts:
 

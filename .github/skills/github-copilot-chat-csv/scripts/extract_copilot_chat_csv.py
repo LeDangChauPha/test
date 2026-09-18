@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import re
 import sqlite3
 from collections import Counter
@@ -15,6 +16,10 @@ from pathlib import Path
 REQUIRED = ("Model", "Prompt", "Credit", "Date")
 OUTPUT_FIELDS = (*REQUIRED, "WorkspacePath")
 PROMPT_LIMIT = 500
+
+
+def expanded_path(value: str) -> Path:
+    return Path(os.path.expandvars(value)).expanduser()
 
 
 def normalize_prompt(value: object) -> str | None:
@@ -216,7 +221,7 @@ def is_current_month(record: dict[str, str | None]) -> bool:
 
 
 def timestamped_summary_path(output_directory: Path) -> Path:
-    timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")[:-3]
+    timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     return output_directory / timestamp / "chat_summary.csv"
 
 
@@ -224,12 +229,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "input",
-        type=Path,
+        type=expanded_path,
         help="CSV file, SQLite database, or GitHub.copilot-chat workspace folder",
     )
     parser.add_argument(
         "output_directory",
-        type=Path,
+        type=expanded_path,
         nargs="?",
         default=None,
         help="Output directory (default: chatlog/csv)",

@@ -15,8 +15,95 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 
 REQUIRED = ("Model", "Prompt", "Credit", "Date")
-OUTPUT_FIELDS = (*REQUIRED, "WorkspacePath", "SessionId")
+OUTPUT_FIELDS = (
+    *REQUIRED,
+    "CreditSource",
+    "PromptTokens",
+    "OutputTokens",
+    "ThinkingTokens",
+    "WorkspacePath",
+    "SessionId",
+)
 PROMPT_LIMIT = 500
+DEFAULT_PRICING_FILE = Path(__file__).with_name("copilot_model_pricing.csv")
+
+
+def load_model_pricing(path: Path) -> list[dict[str, str]]:
+    """Load the saved GitHub Copilot per-token pricing snapshot."""
+    if not path.is_file():
+        return []
+    with path.open("r", encoding="utf-8-sig", newline="") as source:
+        return list(csv.DictReader(source))
+
+
+def pricing_model_key(value: object) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(value or "").casefold())
+
+
+def price_decimal(value: object) -> Decimal | None:
+    if value in (None, "", "Not applicable"):
+        return None
+    try:
+        return Decimal(str(value).replace("$", "").replace(",", "").strip())
+    except InvalidOperation:
+        return None
+
+
+def token_count(value: object) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def estimate_credit(record: dict[str, object], pricing: list[dict[str, str]]) -> Decimal | None:
+    """Estimate AI credits from tokens; one AI credit equals $0.01."""
+    model_key = pricing_model_key(record.get("model"))
+    prompt_tokens = token_count(record.get("prompt_tokens"))
+    output_tokens = token_count(record.get("output_tokens")) + token_count(
+        record.get("thinking_tokens")
+    )
+    if not model_key or not prompt_tokens and not output_tokens:
+        return None
+    matches = [row for row in pricing if pricing_model_key(row.get("Model")) == model_key]
+    if not matches:
+        matches = [
+            row for row in pricing
+            if model_key in pricing_model_key(row.get("Model"))
+            or pricing_model_key(row.get("Model")) in model_key
+        ]
+    if not matches:
+        return None
+    selected = matches[0]
+    for row in matches:
+        threshold = str(row.get("InputTokenThreshold") or "")
+        threshold_match = re.search(r"\d+", threshold)
+        if threshold_match and (
+            (">" in threshold and prompt_tokens > int(threshold_match.group()))
+            or ("≤" in threshold and prompt_tokens <= int(threshold_match.group()))
+        ):
+            selected = row
+            break
+    input_price = price_decimal(selected.get("InputPricePer1M"))
+    output_price = price_decimal(selected.get("OutputPricePer1M"))
+    if input_price is None or output_price is None:
+        return None
+    usd = (
+        Decimal(prompt_tokens) * input_price
+        + Decimal(output_tokens) * output_price
+    ) / Decimal(1_000_000)
+    return (usd / Decimal("0.01")).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
+
+
+def fill_missing_credits(records: list[dict[str, object]], pricing: list[dict[str, str]]) -> None:
+    for record in records:
+        if parse_credit_value(record.get("credit")) is not None:
+            record["credit_source"] = "recorded"
+            continue
+        estimate = estimate_credit(record, pricing)
+        if estimate is not None:
+            record["credit"] = str(estimate)
+            record["credit_source"] = "estimated_from_model_pricing"
 
 
 def expanded_path(value: str) -> Path:
@@ -29,6 +116,22 @@ def normalize_prompt(value: object) -> str | None:
     text = value.encode("ascii", "ignore").decode("ascii")
     text = re.sub(r"\s+", " ", text).strip()
     return text[:PROMPT_LIMIT] or None
+
+
+def nested_number(value: object, target_key: str) -> int | None:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key.casefold() == target_key.casefold() and isinstance(child, (int, float)):
+                return int(child)
+            result = nested_number(child, target_key)
+            if result is not None:
+                return result
+    elif isinstance(value, list):
+        for child in value:
+            result = nested_number(child, target_key)
+            if result is not None:
+                return result
+    return None
 
 
 def sqlite_paths(root: Path) -> list[Path]:
@@ -80,7 +183,7 @@ def apply_session_update(requests: list[dict], update: dict) -> None:
         target[path[-1]] = update.get("v")
 
 
-def session_records(path: Path) -> list[dict[str, str | None]]:
+def session_records(path: Path, debug: bool = False) -> list[dict[str, str | None]]:
     requests: list[dict] = []
     with path.open("r", encoding="utf-8-sig") as source:
         for line in source:
@@ -112,11 +215,28 @@ def session_records(path: Path) -> list[dict[str, str | None]]:
             )
         else:
             date = str(timestamp) if timestamp else None
+        if debug and source_record < 5:
+            credit_keys = {
+                key: request[key]
+                for key in request
+                if "credit" in key.casefold()
+                or "cost" in key.casefold()
+                or "usage" in key.casefold()
+                or "token" in key.casefold()
+            }
+            print(
+                f"DEBUG file={path.name} record={source_record} "
+                f"keys={sorted(request)} credit_related={credit_keys} "
+                f"credit={credit!r} date={date!r}"
+            )
         records.append(
             {
                 "model": request.get("modelId"),
                 "prompt": normalize_prompt(message.get("text")),
                 "credit": str(credit) if credit is not None else None,
+                "prompt_tokens": nested_number(request, "promptTokens"),
+                "output_tokens": nested_number(request, "outputTokens"),
+                "thinking_tokens": nested_number(request, "tokens"),
                 "date": date,
                 "session_id": path.stem,
                 "source_file": str(path),
@@ -137,7 +257,9 @@ def session_records(path: Path) -> list[dict[str, str | None]]:
     return records
 
 
-def workspace_storage_records(root: Path) -> list[dict[str, str | None]]:
+def workspace_storage_records(
+    root: Path, debug: bool = False
+) -> list[dict[str, str | None]]:
     records: list[dict[str, str | None]] = []
     for workspace in sorted(path for path in root.iterdir() if path.is_dir()):
         copilot_folder = workspace / "GitHub.copilot-chat"
@@ -148,13 +270,15 @@ def workspace_storage_records(root: Path) -> list[dict[str, str | None]]:
             continue
         session_files = sorted(chat_sessions.glob("*.jsonl"))
         for session in session_files:
-            for record in session_records(session):
+            for record in session_records(session, debug=debug):
                 record["workspace_path"] = str(workspace)
                 records.append(record)
     return records
 
 
-def read_source(path: Path) -> tuple[list[dict[str, str | None]], list[str]]:
+def read_source(
+    path: Path, debug: bool = False
+) -> tuple[list[dict[str, str | None]], list[str]]:
     if path.is_dir():
         if any(
             (child / "state.vscdb").is_file()
@@ -165,7 +289,7 @@ def read_source(path: Path) -> tuple[list[dict[str, str | None]], list[str]]:
             for child in path.iterdir()
             if child.is_dir()
         ):
-            records = workspace_storage_records(path)
+            records = workspace_storage_records(path, debug=debug)
             if records:
                 return records, ["Model", "Prompt", "Credit", "Date"]
             raise ValueError(f"No Copilot chat sessions found under workspace storage {path}")
@@ -175,7 +299,11 @@ def read_source(path: Path) -> tuple[list[dict[str, str | None]], list[str]]:
                 return records, headers
         root = path.parent if path.name == "GitHub.copilot-chat" else path
         session_files = sorted((root / "chatSessions").glob("*.jsonl"))
-        records = [record for session in session_files for record in session_records(session)]
+        records = [
+            record
+            for session in session_files
+            for record in session_records(session, debug=debug)
+        ]
         if records:
             return records, ["Model", "Prompt", "Credit", "Date"]
         raise ValueError(f"No SQLite table with Model, Prompt, Credit, and Date found under {path}")
@@ -268,7 +396,11 @@ def write_excel_summary(
             record.get("model") or "",
             record.get("prompt") or "",
             parse_credit_value(record.get("credit")),
+            record.get("credit_source") or "",
             record.get("date") or "",
+            record.get("prompt_tokens") or "",
+            record.get("output_tokens") or "",
+            record.get("thinking_tokens") or "",
             record.get("workspace_path") or "",
             record.get("session_id") or "",
         ]
@@ -294,6 +426,10 @@ def session_summary_records(
                 "model": record.get("model"),
                 "prompt": record.get("prompt"),
                 "credit": "0",
+                "credit_source": record.get("credit_source"),
+                "prompt_tokens": 0,
+                "output_tokens": 0,
+                "thinking_tokens": 0,
                 "date": record.get("date"),
                 "workspace_path": record.get("workspace_path"),
                 "session_id": record.get("session_id"),
@@ -306,6 +442,10 @@ def session_summary_records(
         if credit is not None:
             total = parse_credit_value(summary.get("credit")) or Decimal("0")
             summary["credit"] = str(total + credit)
+        if record.get("credit_source") == "estimated_from_model_pricing":
+            summary["credit_source"] = "estimated_from_model_pricing"
+        for field in ("prompt_tokens", "output_tokens", "thinking_tokens"):
+            summary[field] = (summary.get(field) or 0) + (record.get(field) or 0)
 
     return list(summaries.values())
 
@@ -320,7 +460,11 @@ def write_csv_summary(records: list[dict[str, str | None]], output_path: Path) -
                     "Model": record.get("model") or "",
                     "Prompt": record.get("prompt") or "",
                     "Credit": credit_text(record.get("credit")),
+                    "CreditSource": record.get("credit_source") or "",
                     "Date": record.get("date") or "",
+                    "PromptTokens": record.get("prompt_tokens") or "",
+                    "OutputTokens": record.get("output_tokens") or "",
+                    "ThinkingTokens": record.get("thinking_tokens") or "",
                     "WorkspacePath": record.get("workspace_path") or "",
                     "SessionId": record.get("session_id") or "",
                 }
@@ -552,13 +696,45 @@ def main() -> None:
         default=None,
         help="Output directory (default: chatlog/csv)",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print request keys and credit-related fields while reading sessions",
+    )
+    parser.add_argument(
+        "--pricing-file",
+        type=expanded_path,
+        default=DEFAULT_PRICING_FILE,
+        help="Saved model-pricing CSV used when a record has no credit",
+    )
     args = parser.parse_args()
     output_path = timestamped_summary_path(args.output_directory or Path("chatlog") / "csv")
 
-    raw_records, raw_headers = read_source(args.input)
+    raw_records, raw_headers = read_source(args.input, debug=args.debug)
+    pricing = load_model_pricing(args.pricing_file)
+    fill_missing_credits(raw_records, pricing)
+    if args.debug:
+        estimated_count = sum(
+            record.get("credit_source") == "estimated_from_model_pricing"
+            for record in raw_records
+        )
+        print(
+            f"DEBUG pricing_rows={len(pricing)} "
+            f"estimated_credit_records={estimated_count}"
+        )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     reconciliation_outputs(raw_records, output_path.parent)
     raw_records = [record for record in raw_records if is_current_month(record)]
+    if args.debug:
+        credit_count = sum(
+            parse_credit_value(record.get("credit")) is not None
+            for record in raw_records
+        )
+        print(
+            f"DEBUG raw_records={len(raw_records)} "
+            f"records_with_numeric_credit={credit_count} "
+            f"current_month={datetime.now():%Y-%m}"
+        )
     raw_records.sort(key=chronological_key)
     header_map = {normalized_header(name): name for name in raw_headers}
     missing = [name for name in REQUIRED if normalized_header(name) not in header_map]
@@ -569,6 +745,10 @@ def main() -> None:
             "model": row.get("model"),
             "prompt": normalize_prompt(row.get("prompt")),
             "credit": row.get("credit"),
+            "credit_source": row.get("credit_source"),
+            "prompt_tokens": row.get("prompt_tokens"),
+            "output_tokens": row.get("output_tokens"),
+            "thinking_tokens": row.get("thinking_tokens"),
             "date": row.get("date"),
             "workspace_path": row.get("workspace_path"),
             "session_id": row.get("session_id"),

@@ -6,7 +6,7 @@ description: Extract, clean, summarize, or filter GitHub Copilot Chat CSV export
 # Github Copilot Chat Csv
 
 Use this skill for Copilot Chat data whose expected columns are `Model`, `Prompt`, `Credit`, and `Date`.
-The source may be an exported CSV, a SQLite database, or a VS Code workspace-storage folder such as `%APPDATA%/Code/User/workspaceStorage/<workspace-id>/GitHub.copilot-chat`.
+The source may be an exported CSV, a SQLite database, or a VS Code workspace-storage folder such as `$env:APPDATA/Code/User/workspaceStorage/<workspace-id>/GitHub.copilot-chat`.
 
 1. Inspect the CSV header before making claims. Accept a UTF-8 BOM and normalize surrounding whitespace in header names.
 2. Preserve each original row and normalize it to these fields: `model`, `prompt`, `credit`, and `date`. Treat blank values as null; do not invent missing values.
@@ -33,10 +33,10 @@ Summary CSV output also includes `WorkspacePath`, identifying the source VS Code
 
 This CSV is a local workspace-session extract, not an account billing report. Its numeric credits cannot be compared directly with the monthly usage meter shown in GitHub Copilot. The monthly meter may include other devices, web or CLI usage, inline completions, and server-side usage that is absent from local workspace storage.
 
-Each run creates `chatlog/csv/<yyyy-MM-dd-HH-mm-ss-millisecond>/chat_summary.csv`. A workspace folder with no `chatSessions/*.jsonl` snapshots cannot produce a summary.
+Each run creates `chatlog/csv/<yyyy-MM-dd-HH-mm-ss>/chat_summary.csv`. A workspace folder with no `chatSessions/*.jsonl` snapshots cannot produce a summary.
 
 To extract the current calendar month from every workspace, pass the parent `workspaceStorage` folder instead. The script selects workspace IDs containing `state.vscdb` and either `GitHub.copilot-chat` or `chatSessions`, reads their `chatSessions/*.jsonl` files, filters requests by their stored request date, and combines the results into one timestamped project output. Workspace folder creation dates are not used as the activity filter because older workspaces can contain current-month prompts:
 
 ```powershell
-python scripts/extract_copilot_chat_csv.py "%APPDATA%\Code\User\workspaceStorage"
+python scripts/extract_copilot_chat_csv.py "$env:APPDATA\Code\User\workspaceStorage"
 ```

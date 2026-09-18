@@ -116,7 +116,7 @@ Model,Prompt,Credit,Date,WorkspacePath
 Extract current-month prompts from all eligible workspaces in one run. The script selects workspace folders containing `state.vscdb` and either `GitHub.copilot-chat` or `chatSessions`, filters by each prompt's stored request date, then combines their records:
 
 ```powershell
-Set-Location 'c:\code\pj aug\tilt-mcp\design'
+Set-Location 'c:\code\..'
 python .github\skills\github-copilot-chat-csv\scripts\extract_copilot_chat_csv.py `
   "$env:APPDATA\Code\User\workspaceStorage"
 ```

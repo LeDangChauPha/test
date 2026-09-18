@@ -1,0 +1,38 @@
+Provider,Model,ReleaseStatus,Category,Tier,InputTokenThreshold,InputPricePer1M,CachedInputPricePer1M,CacheWritePricePer1M,OutputPricePer1M,Source
+openai,GPT-5 mini,GA,Lightweight,Default,Not applicable,$0.25,$0.025,Not applicable,$2.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+openai,GPT-5.3-Codex,GA,Powerful,Default,Not applicable,$1.75,$0.175,Not applicable,$14.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+openai,GPT-5.4,GA,Versatile,Default,≤ 272K,$2.50,$0.25,Not applicable,$15.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+openai,GPT-5.4,GA,Versatile,Long context,> 272K,$5.00,$0.50,Not applicable,$22.50,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+openai,GPT-5.4 mini,GA,Lightweight,Default,Not applicable,$0.75,$0.075,Not applicable,$4.50,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+openai,GPT-5.4 nano,GA,Lightweight,Default,Not applicable,$0.20,$0.02,Not applicable,$1.25,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+openai,GPT-5.5,GA,Powerful,Default,≤ 272K,$5.00,$0.50,Not applicable,$30.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+openai,GPT-5.5,GA,Powerful,Long context,> 272K,$10.00,$1.00,Not applicable,$45.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+openai,GPT-5.6 Luna,GA,Lightweight,Default,≤ 200K,$0.20,$0.02,$0.25,$1.20,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+openai,GPT-5.6 Luna,GA,Lightweight,Long context,> 200K,$0.40,$0.04,$0.50,$1.80,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+openai,GPT-5.6 Sol,GA,Powerful,Default,≤ 272K,$4.00,$0.40,$5.00,$20.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+openai,GPT-5.6 Sol,GA,Powerful,Long context,> 272K,$8.00,$0.80,$10.00,$30.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+openai,GPT-5.6 Terra,GA,Versatile,Default,≤ 272K,$2.00,$0.20,$2.50,$12.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+openai,GPT-5.6 Terra,GA,Versatile,Long context,> 272K,$4.00,$0.40,$5.00,$18.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+openai,GPT-6 Astra,GA,Powerful,Default,≤ 272K,$10.00,$1.00,$12.50,$50.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+openai,GPT-6 Astra,GA,Powerful,Long context,> 272K,$20.00,$2.00,$25.00,$75.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+anthropic,Claude Haiku 4.5,GA,Versatile,Default,Not applicable,$1.00,$0.10,$1.25,$5.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+anthropic,Claude Sonnet 4,GA,Versatile,Default,Not applicable,$3.00,$0.30,$3.75,$15.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+anthropic,Claude Sonnet 4.6,GA,Versatile,Default,Not applicable,$3.00,$0.30,$3.75,$15.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+anthropic,Claude Opus 4.7,GA,Powerful,Default,Not applicable,$5.00,$0.50,$6.25,$25.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+anthropic,Claude Opus 4.8,GA,Powerful,Default,Not applicable,$5.00,$0.50,$6.25,$25.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+anthropic,Claude Opus 5,GA,Powerful,Default,Not applicable,$5.00,$0.50,$6.25,$25.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+anthropic,Claude Sonnet 5,GA,Versatile,Default,Not applicable,$2.00,$0.20,$2.50,$10.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+anthropic,Claude Opus 4.8 (fast mode) (preview),GA,Powerful,Default,Not applicable,$10.00,$1.00,$12.50,$50.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+anthropic,Claude Fable 5,GA,Powerful,Default,Not applicable,$10.00,$1.00,$12.50,$50.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+anthropic,Claude Fable 5.1,GA,Powerful,Default,Not applicable,$10.00,$0.25,$12.50,$50.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+google,Gemini 3.5 Flash,GA,Lightweight,Default,Not applicable,$1.50,$0.15,Not applicable,$9.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+google,Gemini 3.6 Flash,GA,Versatile,Default,Not applicable,$0.75,$0.075,Not applicable,$3.75,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+google,Gemini 3.7 Flash,GA,Versatile,Default,Not applicable,$0.75,$0.075,Not applicable,$3.75,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+google,Gemini 3.8 Flash,GA,Versatile,Default,Not applicable,$0.75,$0.075,Not applicable,$3.75,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+microsoft,MAI-Code-1.1-Flash,GA,Lightweight,Default,Not applicable,$0.20,$0.02,Not applicable,$1.20,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+xai,Grok 4.5,GA,Versatile,Default,≤ 200K,$2.00,$0.50,Not applicable,$6.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+xai,Grok 4.5,GA,Versatile,Long context,> 200K,$4.00,$1.00,Not applicable,$12.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+xai,Grok 4.6,GA,Versatile,Default,≤ 200K,$2.00,$0.50,Not applicable,$6.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+xai,Grok 4.6,GA,Versatile,Long context,> 200K,$4.00,$1.00,Not applicable,$12.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+moonshot_ai,Kimi K2.7 Code,GA,Versatile,Default,Not applicable,$0.95,$0.19,Not applicable,$4.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
+moonshot_ai,Kimi K3,GA,Powerful,Default,Not applicable,$3.00,$0.30,Not applicable,$15.00,https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/copilot-billing/models-and-pricing
